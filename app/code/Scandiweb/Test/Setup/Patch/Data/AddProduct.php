@@ -18,13 +18,11 @@ use Magento\Catalog\Model\Product\Attribute\Source\Status;
 use Magento\Catalog\Model\Product\Type;
 use Magento\Catalog\Model\Product\Visibility;
 use Magento\Catalog\Model\ProductFactory;
-use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollectionFactory;
 use Magento\Eav\Api\AttributeSetRepositoryInterface;
 use Magento\Eav\Setup\EavSetup;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Framework\App\Area as MagentoArea;
 use Magento\Framework\App\State as AppState;
-use Magento\Framework\DB\TransactionFactory;
 use Magento\Framework\Setup\ModuleDataSetupInterface;
 use Magento\Framework\Setup\Patch\DataPatchInterface;
 use Magento\InventoryApi\Api\Data\SourceItemInterface;
@@ -36,17 +34,31 @@ class AddProduct implements DataPatchInterface
 {
     private const CATEGORY_ID_MEN_TOPS_JACKETS = 14;
 
+    /** @var SourceItemInterface[] */
     protected array $sourceItems = [];
 
+    /**
+     * @param ModuleDataSetupInterface $moduleDataSetup
+     * @param CategoryRepositoryInterface $categoryRepository
+     * @param ProductRepositoryInterface $productRepository
+     * @param ProductFactory $productFactory
+     * @param CategoryLinkManagementInterface $categoryLinkManagement
+     * @param CategoryProductLinkInterfaceFactory $categoryProductLinkFactory
+     * @param AttributeSetRepositoryInterface $attributeSetRepository
+     * @param SearchCriteriaBuilder $searchCriteriaBuilder
+     * @param StoreManagerInterface $storeManager
+     * @param SourceItemsSaveInterface $sourceItemsSaveInterface
+     * @param SourceItemInterfaceFactory $sourceItemFactory
+     * @param EavSetup $eavSetup
+     * @param AppState $appState
+     */
     public function __construct(
         private ModuleDataSetupInterface $moduleDataSetup,
         private CategoryRepositoryInterface $categoryRepository,
         private ProductRepositoryInterface $productRepository,
         private ProductFactory $productFactory,
-        private CategoryCollectionFactory $categoryCollectionFactory,
         private CategoryLinkManagementInterface $categoryLinkManagement,
         private CategoryProductLinkInterfaceFactory $categoryProductLinkFactory,
-        private TransactionFactory $transactionFactory,
         private AttributeSetRepositoryInterface $attributeSetRepository,
         private SearchCriteriaBuilder $searchCriteriaBuilder,
         private StoreManagerInterface $storeManager,
@@ -55,41 +67,62 @@ class AddProduct implements DataPatchInterface
         private EavSetup $eavSetup,
         private AppState $appState
     ) {
-        $this->appState->setAreaCode(MagentoArea::AREA_ADMINHTML);
     }
 
-    public function apply()
+    public function apply(): void
     {
-        $this->moduleDataSetup->startSetup();
-
-        $this->addProduct(
-            self::CATEGORY_ID_MEN_TOPS_JACKETS,
+        $this->appState->emulateAreaCode(
+            MagentoArea::AREA_ADMINHTML,
+            \Closure::fromCallable([$this, 'addProduct']),
             [
-                'sku' => 'ERICK-099',
-                'name' => 'Erick\'s awesome jacket - 2000\'s style',
-                'price' => 107.99
+                self::CATEGORY_ID_MEN_TOPS_JACKETS,
+                [
+                    'sku' => 'ERICK-105',
+                    'name' => 'Erick\'s awesome jacket - 2010\'s style',
+                    'price' => 109.99
+                ]
             ]
         );
-
-        $this->moduleDataSetup->endSetup();
     }
 
-    public function getAliases()
+    /**
+     * @inheritDoc
+     * 
+     * @return string[]
+     */
+    public function getAliases(): array
     {
         return [];
     }
 
-    public static function getDependencies()
+    /**
+     * @inheritDoc
+     * 
+     * @return string[]
+     */
+    public static function getDependencies(): array
     {
         return [];
     }
 
-    private function addProduct(int|array $category, array $productData)
+    /**
+     * Adds a products to the catalog
+     *
+     * @param int|int[] $category
+     * @param array<string, mixed> $productData
+     */
+    protected function addProduct(int|array $category, array $productData): void
     {
+        /**
+         * Uses variadic argument type-hinting language feature to type-hint array elements types.
+         * A TypeError will be thrown if one of the elements of the array is not an int.
+         * This technique makes the param $category to behave like int|int[]
+         * */
         $category = \is_array($category)
             ? (fn(int ...$categoriesIds) => $categoriesIds)(...$category)
             : [$category];
 
+        /** @var \Magento\Catalog\Model\Product */
         $product = $this->productFactory->create();
 
         if ($product->getIdBySku($productData['sku'])) {
@@ -112,7 +145,9 @@ class AddProduct implements DataPatchInterface
 
         $product = $this->productRepository->save($product);
 
+        /** @var SourceItemInterface */
         $sourceItem = $this->sourceItemFactory->create();
+
         $sourceItem->setSourceCode('default');
         $sourceItem->setQuantity(10);
         $sourceItem->setSku($product->getSku());
